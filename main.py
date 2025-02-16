@@ -140,9 +140,15 @@ def task_run(item: TaskModel):
 
     #print(input_file)
 
+    input_type = type(input_file).__name__
+
     if 'url' in input_file:
         #print("the input file url is "+ input_file['url'])
         output_details = api_request(input_file['url'])
+
+    elif input_type == "dict":
+        output_details = output_file
+
     else:
         check_file = os.path.isabs(input_file)
         if check_file == True:
@@ -198,25 +204,29 @@ def task_run(item: TaskModel):
     #returns JSON object as a dictionary
     
     #print(file_contents)
-
-    try:
-        output_extension = os.path.splitext(output_file)[1]
-        
-    except Exception as e:
-       return "error in outfile"
-
-
-    #print(output_details)
-    if output_extension == ".json":
-        output_type = type(output_details).__name__
-        if(output_type == "dict"):
-            output_format = output_details
-        else:
-            output_format = json.loads(output_details)
-        
-       
-    else:
+    if input_type == "dict":
         output_format = output_details
+
+    else:
+
+        try:
+            output_extension = os.path.splitext(output_file)[1]
+            
+        except Exception as e:
+            return "error in outfile"
+
+
+        #print(output_details)
+        if output_extension == ".json":
+            output_type = type(output_details).__name__
+            if(output_type == "dict"):
+                output_format = output_details
+            else:
+                output_format = json.loads(output_details)
+            
+        
+        else:
+            output_format = output_details
    
 
     #print(output_format)
@@ -225,15 +235,17 @@ def task_run(item: TaskModel):
     # Write data to a JSON file
     try:
 
-        
-        with open(output_file.strip("/"), 'w+') as f:
-            if output_extension == ".json":
-                json.dump(output_format, f, indent=4)
-            
-            else:
-                f.write(output_format)
+        if input_type == "dict":
+            return output_format
+        else:
+            with open(output_file.strip("/"), 'w+') as f:
+                if output_extension == ".json":
+                    json.dump(output_format, f, indent=4)
                 
-        return "success"  
+                else:
+                    f.write(output_format)
+                    
+            return "success"  
             
     except Exception as e:
         #print(str(e))
