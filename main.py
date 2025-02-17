@@ -4,12 +4,9 @@ from fastapi import FastAPI,Request,HTTPException
 
 from pydantic import BaseModel
 import json
-from sentence_transformers import SentenceTransformer
-from sentence_transformers import SimilarityFunction
 from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
 from urllib.request import urlopen
-import markdownify 
 from datetime import datetime
 import pandas as pd
 import re
@@ -20,8 +17,6 @@ import os
 import requests  
 
 import numpy as np
-
-import torch
 
 import json
 
@@ -57,14 +52,14 @@ def read_root():
 @app.get("/read/")
 def read_output(path: str):
 
-    #print(path)
+    print(path)
     try:
-        with open(path.strip("/")) as f: 
+        with open(path.strip("/")) as f:
             content = f.read()
             return content
     except Exception as e:
-        #print(str(e))
-        return HTTPException(status_code=404, detail="unable to read")
+        print(str(e))
+        return HTTPException(status_code=404, detail="unable to read or file not found")
 
 
 
@@ -73,7 +68,8 @@ def llm_function(update_new_user_message):
     #update_new_user_message = task_description + "return only the output and no markdown " + file_contents 
     #print(update_new_user_message)
 
-    llm_token = os.environ['LLM_TOKEN']
+    #llm_token = os.environ['LLM_TOKEN']
+    llm_token = os.environ['AIPROXY_TOKEN']
     output_response = requests.post(
     "https://llmfoundry.straive.com/openai/v1/chat/completions",
     headers={"Authorization": f"Bearer {llm_token}:my-test-project"},
@@ -109,7 +105,9 @@ def task_run(item: TaskModel):
 
     image_extension = [".jpg",".png"]
     file_extension = [".txt",".log"]
-    llm_token = os.environ['LLM_TOKEN']
+    llm_token = os.environ['AIPROXY_TOKEN']
+
+    #rint(llm_token)
     user_message_query = "write the task description,main task,input and output file give only json format with out markdown" + item.task
     response = requests.post(
     "https://llmfoundry.straive.com/openai/v1/chat/completions",
@@ -151,10 +149,14 @@ def task_run(item: TaskModel):
 
     else:
         check_file = os.path.isabs(input_file)
+
+        #print(check_file)
         if check_file == True:
             input_file = input_file
         else:
             input_file = "/data/" + os.path.basename(input_file)
+
+        #print(input_file)
 
         try: 
             
@@ -166,7 +168,7 @@ def task_run(item: TaskModel):
                 #print(input_extension)
                 #print(input_file)
 
-                with open(input_file,"rb") as image_file:
+                with open(input_file.strip("/"),"rb") as image_file:
                     #print("coming after file open")
                     file_contents = base64.b64encode(image_file.read())
                     
@@ -238,7 +240,9 @@ def task_run(item: TaskModel):
         if input_type == "dict":
             return output_format
         else:
+            
             with open(output_file.strip("/"), 'w+') as f:
+            #with open('data/credit_card.txt', 'w+') as f:
                 if output_extension == ".json":
                     json.dump(output_format, f, indent=4)
                 
