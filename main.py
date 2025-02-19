@@ -131,6 +131,7 @@ def task_run(item: TaskModel):
     #print(task_json_format['task_description'])
     #print(task_json_format['input_file'])
     #print(task_json_format['output_file'])
+    #print(task_json_format['main_task'])
 
     task_description = task_json_format['task_description']
     input_file = task_json_format['input_file']
@@ -177,25 +178,25 @@ def task_run(item: TaskModel):
                     },
                     {
                     "type": "text",
-                    "text": task_json_format['main_task'] + "return only the output"
+                    "text": task_json_format['main_task'] + " return only the output"
                     }]
                         
 
                 elif input_extension in file_extension:
 
-                    with open(input_file) as user_file:
+                    with open(input_file.strip("/")) as user_file:
                         file_contents = user_file.read()
-                        update_new_user_message = task_description + "return only the output and no markdown " + file_contents
+                        update_new_user_message = task_description + " return only the output and no markdown " + file_contents
 
                 else:
-                        with open(input_file) as user_file:
+                        with open(input_file.strip("/")) as user_file:
                             file_contents = user_file.read()
-                            update_new_user_message = task_description + "return only the output and no markdown " + file_contents
+                            update_new_user_message = task_description + " return only the output and no markdown " + file_contents
                 output_details = llm_function(update_new_user_message)
 
             except Exception as e:
-                #print(str(e))
-                return "error in reading task details"
+                print(str(e))
+                return "error in reading task or input details"
 
         else:
             output_details = output_file
