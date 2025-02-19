@@ -1,7 +1,5 @@
 from typing import Union
-
 from fastapi import FastAPI,Request,HTTPException
-
 from pydantic import BaseModel
 import json
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,19 +10,15 @@ import pandas as pd
 import re
 from urllib.parse import urlencode
 import base64
-
 import os
 import requests  
-
 import numpy as np
-
 import json
+from urlextract import URLExtract
 
 import asyncio
 
 loop = asyncio.get_event_loop()
-
-
 
 import httpx
 import os
@@ -49,6 +43,17 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],  allow_methods=["GET", "
 def read_root():
     return {"Hello": "World"}
 
+def is_json(myjson):
+  try:
+    json.loads(myjson)
+  except ValueError as e:
+    return False
+  return True
+
+def is_json_empty(json_obj):
+    # return true if length is 0.
+    return len(json_obj) == 0
+
 @app.get("/read/")
 def read_output(path: str):
 
@@ -57,6 +62,7 @@ def read_output(path: str):
         with open(path.strip("/")) as f:
             content = f.read()
             return content
+
     except Exception as e:
         print(str(e))
         return HTTPException(status_code=404, detail="unable to read or file not found")
@@ -70,19 +76,26 @@ def llm_function(update_new_user_message):
 
     #llm_token = os.environ['LLM_TOKEN']
     llm_token = os.environ['AIPROXY_TOKEN']
+
+    print("user message")
+    print(update_new_user_message)
     output_response = requests.post(
-    "https://llmfoundry.straive.com/openai/v1/chat/completions",
-    headers={"Authorization": f"Bearer {llm_token}:my-test-project"},
-    json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": update_new_user_message}]}
-    )
+    #"https://llmfoundry.straive.com/openai/v1/chat/completions",
+    "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions",
+    headers={"Authorization": f"Bearer {llm_token}"},
+    json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": update_new_user_message}]},verify=False)
 
     output_response_content = output_response.json()
-
-    #print("the output response is")
 
     output_details = output_response_content['choices'][0]['message']['content']
 
     return output_details
+
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
 
 
 def api_request(apiurl):
@@ -104,22 +117,14 @@ def task_run(item: TaskModel):
     #print(item.task)
 
     image_extension = [".jpg",".png"]
-    file_extension = [".txt",".log"]
-    llm_token = os.environ['AIPROXY_TOKEN']
+    file_extension = [".txt",".log",".json"]
 
-    #rint(llm_token)
-    user_message_query = "write the task description,main task,input and output file give only json format with out markdown" + item.task
-    response = requests.post(
-    "https://llmfoundry.straive.com/openai/v1/chat/completions",
-    headers={"Authorization": f"Bearer {llm_token}:my-test-project"},
-    json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": user_message_query}]}
-    )
+    #user_message_query = "write the task description,input and output file name represent it in json keys and give response only in json format with out markdown:" + item.task
+    
+    # old_user_message_query = "write the task description,input and output file name represent it in json keys and give response only in json format with out markdown:" + item.task
+    user_message_query = "write the exact task description,main task, input and output file name if present in the user message and represent it in json keys else don't give details and provide response only in json format with out markdown:" + item.task
 
-    response_content = response.json()
-
-    #print(response_content)
-
-    task_details = response_content['choices'][0]['message']['content']
+    task_details = llm_function(user_message_query)
     
     task_json_format = json.loads(task_details)
 
@@ -131,137 +136,133 @@ def task_run(item: TaskModel):
     input_file = task_json_format['input_file']
     output_file = task_json_format['output_file']
 
-    if 'name' in output_file:
-        output_file = output_file['name']
-    else:
-        output_file = output_file
-
-    #print(input_file)
-
     input_type = type(input_file).__name__
 
-    if 'url' in input_file:
-        #print("the input file url is "+ input_file['url'])
-        output_details = api_request(input_file['url'])
+    #print(task_json_format)
+    #print(input_type)
 
-    elif input_type == "dict":
-        output_details = output_file
-
-    else:
+    if input_file is not None:
         check_file = os.path.isabs(input_file)
 
         #print(check_file)
+
         if check_file == True:
-            input_file = input_file
-        else:
-            input_file = "/data/" + os.path.basename(input_file)
 
-        #print(input_file)
-
-        try: 
+            input_format = "file"
             
-            input_extension = os.path.splitext(input_file)[1]
-            #print("input_extension" + input_extension)
 
-            if input_extension in image_extension:
+            #print(check_file)
+            if check_file == True:
+                input_file = input_file
+            else:
+                input_file = "/data/" + os.path.basename(input_file)
 
-                #print(input_extension)
-                #print(input_file)
+            #print(input_file)
 
-                with open(input_file.strip("/"),"rb") as image_file:
-                    #print("coming after file open")
-                    file_contents = base64.b64encode(image_file.read())
-                    
-                    #print(file_contents)
+            try: 
+                
+                input_extension = os.path.splitext(input_file)[1]
+
+                if input_extension in image_extension:
+                    file_content = encode_image(input_file.strip("/"))
+                    #print(file_content)
 
                     update_new_user_message =  [{
                     "type": "image_url",
                     "image_url": {
-                        "url": "data:image/png;base64,"+ file_contents.decode("utf-8"),
+                        "url" : "data:image/png;base64," + file_content,
                         "detail": "low"
+                        
                     }
                     },
                     {
                     "type": "text",
-                    "text": task_description + "return only the output and no markdown "
+                    "text": task_json_format['main_task'] + "return only the output"
                     }]
-                    
+                        
 
-            elif input_extension in file_extension:
+                elif input_extension in file_extension:
 
-                with open(input_file) as user_file:
-                    file_contents = user_file.read()
-                    update_new_user_message = task_description + "return only the output and no markdown " + file_contents
-
-            else:
                     with open(input_file) as user_file:
                         file_contents = user_file.read()
                         update_new_user_message = task_description + "return only the output and no markdown " + file_contents
-            output_details = llm_function(update_new_user_message)
 
-        except Exception as e:
-            #print(str(e))
-            return "error in reading input file"
+                else:
+                        with open(input_file) as user_file:
+                            file_contents = user_file.read()
+                            update_new_user_message = task_description + "return only the output and no markdown " + file_contents
+                output_details = llm_function(update_new_user_message)
 
-    #returns JSON object as a dictionary
-    
-    #print(file_contents)
-    if input_type == "dict":
-        output_format = output_details
+            except Exception as e:
+                #print(str(e))
+                return "error in reading task details"
 
-    else:
-
-        try:
-            output_extension = os.path.splitext(output_file)[1]
-            
-        except Exception as e:
-            return "error in outfile"
-
-
-        #print(output_details)
-        if output_extension == ".json":
-            output_type = type(output_details).__name__
-            if(output_type == "dict"):
-                output_format = output_details
-            else:
-                output_format = json.loads(output_details)
-            
-        
         else:
-            output_format = output_details
-   
+            output_details = output_file
+    else:
+        #print("the input is null")
 
-    #print(output_format)
-    #print(output_file)
+        secondary_message = "what are the input and output also example code block in the below message return response only in json format and no markdown:" + item.task
+        secondary_output_details = llm_function(secondary_message)
 
-    # Write data to a JSON file
+        secondary_output_json = json.loads(secondary_output_details)
+
+        check_input = secondary_output_json["input"]
+
+        if 'url' in check_input:
+            api_response_call = api_request(check_input['url'])
+            check_json_status = is_json_empty(api_response_call)
+
+            if check_json_status is not True:
+                secondary_output_details = api_response_call
+
+        
     try:
 
-        if input_type == "dict":
-            return output_format
+        if input_file is not None:
+            output_format = output_details
         else:
-            
-            with open(output_file.strip("/"), 'w+') as f:
-            #with open('data/credit_card.txt', 'w+') as f:
-                if output_extension == ".json":
-                    json.dump(output_format, f, indent=4)
+            output_format = secondary_output_details
+
+        #print("the output format is")
+        #print(output_format)
+
+        output_type = type(output_format).__name__
+        
+
+        if input_file is not None:
+            if output_file is not None:
+                output_extension = os.path.splitext(output_file)[1]
                 
-                else:
-                    f.write(output_format)
+                with open(output_file.strip("/"), 'w+') as f:
+                    if output_extension == ".json":
+
+                        json_status = is_json(output_format)
+                        if json_status == True:
+                            f.write(output_format)
+                        else:
+                            json.dump(output_format, f, indent=4)
                     
-            return "success"  
+                    else:
+                        f.write(output_format)
+                        
+                            
+            else:
+                if (output_type == "dict"):
+                    output_format = json.dumps(output_format,indent=4)
+                else:
+                    output_format = json.loads(output_format)
+                return output_format
+        else:
+
+            if (output_type == "dict"):
+                output_format = json.dumps(output_format,indent=4)
+            else:
+                output_format = json.loads(output_format)
+            return output_format
             
+        return "success" 
+
     except Exception as e:
         #print(str(e))
         return HTTPException(status_code=500, detail="error")
-
-
-
-    
-
-    
-
-
-
-    
-
